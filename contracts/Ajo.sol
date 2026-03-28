@@ -31,4 +31,42 @@ contract Ajo {
 
         emit AjoCreated(_admin, _contributionAmount, _maxMembers);
     }
+
+    // ─── Withdraw ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Withdraw the caller's entire balance from the pool.
+     *
+     * CEI order:
+     *   Checks  — caller is member, balance > 0
+     *   Effects — zero balance and totalPool BEFORE the ETH transfer
+     *   Interactions — low-level `.call` to transfer ETH
+     *
+     * The `nonReentrant` modifier provides a second layer of defence: even if
+     * a malicious contract re-enters `withdraw()` during the `.call`, the
+     * mutex will revert the nested call before any state is read again.
+     */
+    function withdraw() external nonReentrant {
+        // ── CHECKS ──────────────────────────────────────────────────────────
+        if (!isMember[msg.sender])      revert NotMember();
+        uint256 amount = balances[msg.sender];
+        if (amount == 0)                revert NothingToWithdraw();
+
+        // ── EFFECTS ─────────────────────────────────────────────────────────
+        balances[msg.sender]  = 0;
+        totalPool            -= amount;
+
+        // ── INTERACTIONS ────────────────────────────────────────────────────
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        if (!success) revert TransferFailed();
+
+        emit Withdrawal(msg.sender, amount);
+    }
+
+    // ─── View Helpers ─────────────────────────────────────────────────────────
+
+    /// @notice Returns the contract's current ETH balance.
+    function contractBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
 }
